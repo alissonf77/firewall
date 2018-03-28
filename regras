@@ -1,0 +1,39 @@
+#!/bin/sh
+# Garantir política restritiva.
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+# Limpas as configurações vigentes.
+iptables -F
+# Liberar interface localhost
+iptables -A INPUT -i lo  -m state --state ESTABLISHED,RELATED -j ACCEPT
+######## CRIAR LOG PARA REGISTRO DA REDE ABAIXO
+iptables -A FORWARD -s 192.4.20.1 -d 172.20.4.1 -p icmp -j LOG --log-prefix "Tentativa de ping frustrada" 
+iptables -A FORWARD -s 172.20.4.1 -d 192.4.20.1 -p icmp -j LOG --log-prefix "Tentativa de ping frustrada" 
+# REJEITAR ICMP DA REDE INTERNA (CLIENTEXP) PARA DMZ EXTERNA
+iptables -A FORWARD -s 192.4.20.1 -p icmp -d 172.20.4.1 -m state --state ESTABLISHED,RELATED -j REJECT
+# LIBERAR ACESSO AO REPOSITÓRIO DEBIAN PARA O FIREWALL
+iptables -A INPUT -p udp --sport 53 -j ACCEPT
+iptables -A INPUT -s ftp.br.debian.org -p tcp --sport 80 -j ACCEPT
+# LIBERAR ACESSO AO REPOSITÓRIO DEBIAN PARA DMZ INTERNA	
+iptables -A FORWARD -p udp --dport 53  -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD -i vlan30 -d ftp.br.debian.org -p tcp --dport 80 -m state --state ESTABLISHED,RELATED -j ACCEPT
+#LIBERAR SSH PARA O CENÁRIO
+iptables -A FORWARD -p tcp --dport 22 -m state --state ESTABLISHED,RELATED -j ACCEPT 
+iptables -A FORWARD -p tcp --dport 2222 -m state --state ESTABLISHED,RELATED -j ACCEPT 
+# LIBERAR ACESSO AOS CLIENTES
+iptables -A FORWARD -i vlan10 -o vlan20 -m state --state ESTABLISHED,RELATED,NEW -j ACCEPT 
+# LIBERAR SSH DO FIREWALL PARA DMZ INTERNA, EXTERNA E REDE INTERNA.
+iptables -I INPUT -p tcp -m state --state NEW,RELATED,ESTABLISHED -m tcp --dport 22 -j ACCEPT
+iptables -I OUTPUT -p tcp -m state --state RELATED,ESTABLISHED -m tcp --sport 22 -j ACCEPT
+# LIBERAR ICMP ENTRE HOSTS DO CENÁRIO (outra forma de fazer, pois foi feito lá em cima)
+iptables -A FORWARD ! -o eth0 -i vlan10 -p icmp -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD ! -o eth0 -i vlan20 -p icmp -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD ! -o eth0 -i vlan30 -p icmp -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD ! -o eth0 -i eth1 -p icmp  -m state --state ESTABLISHED,RELATED -j ACCEPT
+# LIBERAREM ACESSO A INTERNET (NAVEGAÇÃO); EXCETO O CLIENTE DA VLAN 20
+# (precisa liberar DNS, HTTP E HTTPS)
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT 
+iptables -A FORWARD ! -i vlan20 -p udp --dport 53 -j ACCEPT
+iptables -A FORWARD ! -i vlan20 -p tcp --dport 80 -j ACCEPT
+iptables -A FORWARD ! -i vlan20 -p tcp --dport 443 -j ACCEPT
